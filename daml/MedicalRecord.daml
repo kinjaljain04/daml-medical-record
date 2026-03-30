@@ -1,0 +1,64 @@
+-- MedicalRecord.daml
+-- A simple private medical record contract on Canton Network
+
+module MedicalRecord where
+
+import Daml.Script
+
+template Patient
+  with
+    patientId : Party
+    name      : Text
+    dob       : Date
+  where
+    signatory patientId
+
+    choice Archive : ()
+      controller patientId
+      do return ()
+
+template Doctor
+  with
+    doctorId : Party
+    name     : Text
+  where
+    signatory doctorId
+
+    choice Archive : ()
+      controller doctorId
+      do return ()
+
+template MedicalReport
+  with
+    patient  : Patient
+    doctor   : Doctor
+    reportId : Text
+    diagnosis: Text
+    medication: Text
+    -- Only the patient and doctor can see this record
+  where
+    signatory doctor.doctorId
+    observer patient.patientId
+
+    -- Only the doctor can archive a medical report (e.g., if it's superseded)
+    choice Archive : ()
+      controller doctor.doctorId
+      do return ()
+
+    -- Only the doctor can update the medical report
+    choice UpdateMedicalReport : ContractId MedicalReport
+      with
+        newDiagnosis : Text
+        newMedication: Text
+      controller doctor.doctorId
+      do
+        create this with diagnosis = newDiagnosis; medication = newMedication
+
+    -- The patient can grant access to another party (e.g., another doctor)
+    choice GrantAccess : ContractId MedicalReport
+      with
+        grantee : Party
+      controller patient.patientId
+      do
+        create this with observer = grantee
+
