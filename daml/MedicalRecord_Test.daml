@@ -1,0 +1,138 @@
+-- MedicalRecord_Test.daml
+-- Daml Script tests for the Medical Record contracts
+-- Run with: dpm test
+
+module MedicalRecord_Test where
+
+import Daml.Script
+import MedicalRecord
+import DA.Date
+
+-- TEST 1: Create a Patient and Doctor
+testCreateEntities : Script ()
+testCreateEntities = do
+  patientA <- allocatePartyWithHint "PatientA" (PartyIdHint "PatientA")
+  doctorX  <- allocatePartyWithHint "DoctorX"  (PartyIdHint "DoctorX")
+
+  patientA_cid <- submit patientA do
+    createCmd Patient with
+      patientId = patientA
+      name      = "Alice Smith"
+      dob       = date 1990 Feb 15
+
+  doctorX_cid <- submit doctorX do
+    createCmd Doctor with
+      doctorId = doctorX
+      name     = "Dr. House"
+
+  debug "TEST 1 PASSED: Patient and Doctor created"
+  return ()
+
+-- TEST 2: Doctor creates a Medical Report for Patient
+testCreateMedicalReport : Script ()
+testCreateMedicalReport = do
+  patientA <- allocatePartyWithHint "PatientA" (PartyIdHint "PatientA")
+  doctorX  <- allocatePartyWithHint "DoctorX"  (PartyIdHint "DoctorX")
+
+  patientA_entity <- submit patientA do
+    createCmd Patient with
+      patientId = patientA
+      name      = "Alice Smith"
+      dob       = date 1990 Feb 15
+
+  doctorX_entity <- submit doctorX do
+    createCmd Doctor with
+      doctorId = doctorX
+      name     = "Dr. House"
+
+  report_cid <- submit doctorX do
+    createCmd MedicalReport with
+      patient = patientA_entity
+      doctor = doctorX_entity
+      reportId = "REPORT-001"
+      diagnosis = "Common Cold"
+      medication = "Paracetamol"
+
+  Some report <- queryContractId patientA report_cid
+  assertMsg "Report should be visible to patient" (report.diagnosis == "Common Cold")
+
+  debug "TEST 2 PASSED: Medical Report created and visible to patient"
+  return ()
+
+-- TEST 3: Doctor updates a Medical Report
+testUpdateMedicalReport : Script ()
+testUpdateMedicalReport = do
+  patientA <- allocatePartyWithHint "PatientA" (PartyIdHint "PatientA")
+  doctorX  <- allocatePartyWithHint "DoctorX"  (PartyIdHint "DoctorX")
+
+  patientA_entity <- submit patientA do
+    createCmd Patient with
+      patientId = patientA
+      name      = "Alice Smith"
+      dob       = date 1990 Feb 15
+
+  doctorX_entity <- submit doctorX do
+    createCmd Doctor with
+      doctorId = doctorX
+      name     = "Dr. House"
+
+  report_cid <- submit doctorX do
+    createCmd MedicalReport with
+      patient = patientA_entity
+      doctor = doctorX_entity
+      reportId = "REPORT-002"
+      diagnosis = "Initial Diagnosis"
+      medication = "None"
+
+  new_report_cid <- submit doctorX do
+    exerciseCmd report_cid UpdateMedicalReport with
+      newDiagnosis = "Influenza"
+      newMedication = "Tamiflu"
+
+  Some updated_report <- queryContractId patientA new_report_cid
+  assertMsg "Diagnosis should be updated" (updated_report.diagnosis == "Influenza")
+  assertMsg "Medication should be updated" (updated_report.medication == "Tamiflu")
+
+  debug "TEST 3 PASSED: Medical Report updated"
+  return ()
+
+-- TEST 4: Patient grants access to another Doctor
+testGrantAccess : Script ()
+testGrantAccess = do
+  patientA <- allocatePartyWithHint "PatientA" (PartyIdHint "PatientA")
+  doctorX  <- allocatePartyWithHint "DoctorX"  (PartyIdHint "DoctorX")
+  doctorY  <- allocatePartyWithHint "DoctorY"  (PartyIdHint "DoctorY")
+
+  patientA_entity <- submit patientA do
+    createCmd Patient with
+      patientId = patientA
+      name      = "Alice Smith"
+      dob       = date 1990 Feb 15
+
+  doctorX_entity <- submit doctorX do
+    createCmd Doctor with
+      doctorId = doctorX
+      name     = "Dr. House"
+
+  report_cid <- submit doctorX do
+    createCmd MedicalReport with
+      patient = patientA_entity
+      doctor = doctorX_entity
+      reportId = "REPORT-003"
+      diagnosis = "Initial Diagnosis"
+      medication = "None"
+
+  -- DoctorY should not see the report initially
+  initial_query_docY <- queryContractId doctorY report_cid
+  assertMsg "DoctorY should not see report initially" (initial_query_docY == None)
+
+  -- Patient grants access to DoctorY
+  new_report_cid <- submit patientA do
+    exerciseCmd report_cid GrantAccess with grantee = doctorY
+
+  -- DoctorY should now see the new report
+  Some granted_report <- queryContractId doctorY new_report_cid
+  assertMsg "DoctorY should now see the report" (granted_report.diagnosis == "Initial Diagnosis")
+
+  debug "TEST 4 PASSED: Patient granted access to DoctorY"
+  return ()
